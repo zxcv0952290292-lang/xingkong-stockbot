@@ -788,6 +788,55 @@ def generate_html(data):
   }}
   </script>
 
+  <!-- 歷史推薦戰績回測 -->
+  <div class="backtest">
+    <style>
+      .backtest {{ background:#161b22; border:1px solid #21262d; border-radius:14px; padding:18px; margin:14px 0; }}
+      .bt-head {{ text-align:center; margin-bottom:14px; }}
+      .bt-head h2 {{ font-size:17px; color:#f0c040; margin-bottom:2px; }}
+      .bt-head .sub {{ font-size:12px; color:#8b949e; }}
+      .bt-tiles {{ display:flex; gap:10px; margin-bottom:14px; }}
+      .bt-tile {{ flex:1; background:#0d1117; border:1px solid #21262d; border-radius:10px; padding:12px 6px; text-align:center; }}
+      .bt-tile .v {{ font-size:21px; font-weight:800; }}
+      .bt-tile .v.pos {{ color:#f85149; }} .bt-tile .v.neg {{ color:#3fb950; }} .bt-tile .v.neu {{ color:#58a6ff; }}
+      .bt-tile .l {{ font-size:11px; color:#8b949e; margin-top:3px; }}
+      .bt-bw {{ display:flex; gap:10px; font-size:12px; color:#c9d1d9; margin-bottom:14px; }}
+      .bt-bw div {{ flex:1; background:#0d1117; border-radius:8px; padding:9px 10px; }}
+      .bt-row {{ display:flex; align-items:center; gap:8px; margin:5px 0; font-size:11px; color:#c9d1d9; }}
+      .bt-row .lbl {{ width:60px; color:#8b949e; text-align:right; }}
+      .bt-row .bar {{ height:13px; border-radius:3px; min-width:2px; }}
+      .bt-recent table {{ width:100%; border-collapse:collapse; font-size:12px; }}
+      .bt-recent td {{ padding:5px 6px; border-bottom:1px solid #1a1f2c; }}
+      .bt-note {{ font-size:11px; color:#484f58; margin-top:10px; text-align:center; line-height:1.6; }}
+    </style>
+    <div class="bt-head"><h2>📊 歷史推薦戰績</h2><div class="sub" id="btSub">載入中…</div></div>
+    <div id="btBody"></div>
+  </div>
+  <script>
+  fetch('https://xingkong-linebot.onrender.com/api/backtest').then(function(r){{ return r.json(); }}).then(function(d){{
+    if (!d || !d.samples) {{ document.getElementById('btSub').textContent = '資料整理中'; return; }}
+    document.getElementById('btSub').textContent = d.date_from + ' ~ ' + d.date_to + ' · 共 ' + d.samples + ' 檔推薦';
+    var ar = d.avg_return, arCls = ar > 0 ? 'pos' : (ar < 0 ? 'neg' : 'neu');
+    var h = '<div class="bt-tiles">'
+      + '<div class="bt-tile"><div class="v neu">' + d.win_rate + '%</div><div class="l">勝率（收正報酬）</div></div>'
+      + '<div class="bt-tile"><div class="v ' + arCls + '">' + (ar > 0 ? '+' : '') + ar + '%</div><div class="l">平均報酬</div></div>'
+      + '<div class="bt-tile"><div class="v neu">' + d.samples + '</div><div class="l">推薦樣本</div></div></div>';
+    h += '<div class="bt-bw"><div>🏆 最佳　' + d.best.name + ' <b style="color:#f85149">+' + d.best.ret + '%</b></div>'
+      + '<div>💧 最差　' + d.worst.name + ' <b style="color:#3fb950">' + d.worst.ret + '%</b></div></div>';
+    var bk = d.buckets, tot = d.samples;
+    var order = [['gt20','>20%','#f85149'],['p10-20','10~20%','#f0883e'],['p0-10','0~10%','#d29922'],['n10-0','-10~0%','#3fb950'],['lt-10','<-10%','#238636']];
+    var dh = '';
+    order.forEach(function(o){{ var c = bk[o[0]] || 0; var w = tot ? Math.round(c / tot * 100) : 0; dh += '<div class="bt-row"><span class="lbl">' + o[1] + '</span><span class="bar" style="width:' + Math.max(w * 1.6, 2) + 'px;background:' + o[2] + '"></span><span>' + c + ' 檔</span></div>'; }});
+    h += dh;
+    var rh = '<div class="bt-recent" style="margin-top:12px"><table>';
+    d.recent.forEach(function(x){{ var col = x.ret > 0 ? '#f85149' : '#3fb950'; rh += '<tr><td style="color:#8b949e">' + x.date.slice(5) + '</td><td>' + x.name + '</td><td style="text-align:right;font-weight:700;color:' + col + '">' + (x.ret > 0 ? '+' : '') + x.ret + '%</td></tr>'; }});
+    rh += '</table></div>';
+    h += rh;
+    h += '<div class="bt-note">※ 以推薦當日收盤價買進、持有至今計算，僅供參考，非投資建議。過去績效不代表未來表現。</div>';
+    document.getElementById('btBody').innerHTML = h;
+  }}).catch(function(){{ document.getElementById('btSub').textContent = '暫時無法載入'; }});
+  </script>
+
   <!-- 大盤 K 線圖 -->
   <div class="tv-market-hero">
     <div class="lbl">📈 台股加權指數（TAIEX）· 大盤即時走勢</div>

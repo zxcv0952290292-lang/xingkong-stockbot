@@ -657,7 +657,8 @@ def generate_html(data):
 
   .story-box {{ background: #1c2128; border-left: 3px solid #58a6ff; border-radius: 0 8px 8px 0; padding: 12px 14px; font-size: 14px; line-height: 1.7; color: #c9d1d9; }}
   .story-label {{ font-size: 11px; color: #58a6ff; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.5px; }}
-  .info-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }}
+  .info-grid {{ display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 8px; }}
+  .info-item .value {{ word-break: break-word; overflow-wrap: anywhere; }}
   .info-item {{ background: #1c2128; border-radius: 8px; padding: 10px 12px; }}
   .info-item .label {{ font-size: 11px; color: #8b949e; margin-bottom: 4px; font-weight: 600; }}
   .info-item .value {{ font-size: 13px; color: #c9d1d9; line-height: 1.5; }}

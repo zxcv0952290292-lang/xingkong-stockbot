@@ -883,15 +883,36 @@ def generate_html(data):
       + '<div>💧 最差　' + d.worst.name + ' <b style="color:#3fb950">' + d.worst.ret + '%</b></div></div>';
     var bk = d.buckets, tot = d.samples;
     var order = [['gt20','>20%','#f85149'],['p10-20','10~20%','#f0883e'],['p0-10','0~10%','#d29922'],['n10-0','-10~0%','#3fb950'],['lt-10','<-10%','#238636']];
-    var dh = '';
-    order.forEach(function(o){{ var c = bk[o[0]] || 0; var w = tot ? Math.round(c / tot * 100) : 0; dh += '<div class="bt-row"><span class="lbl">' + o[1] + '</span><span class="bar" style="width:' + Math.max(w * 1.6, 2) + 'px;background:' + o[2] + '"></span><span>' + c + ' 檔</span></div>'; }});
+    var dh = '<div style="font-size:10px;color:#6b7280;margin:2px 0 5px">📊 報酬分佈（點區間看是哪些股票 ▾）</div>';
+    order.forEach(function(o){{ var c = bk[o[0]] || 0; var w = tot ? Math.round(c / tot * 100) : 0; dh += '<div class="bt-row" data-bk="' + o[0] + '" style="cursor:pointer"><span class="lbl">' + o[1] + '</span><span class="bar" style="width:' + Math.max(w * 1.6, 2) + 'px;background:' + o[2] + '"></span><span>' + c + ' 檔 ›</span></div>'; }});
+    dh += '<div id="btBucketList"></div>';
     h += dh;
-    var rh = '<div class="bt-recent" style="margin-top:12px"><table>';
+    var rh = '<div class="bt-recent" style="margin-top:6px"><table>';
     d.recent.forEach(function(x){{ var col = x.ret > 0 ? '#f85149' : '#3fb950'; rh += '<tr><td style="color:#8b949e">' + x.date.slice(5) + '</td><td>' + x.name + '</td><td style="text-align:right;font-weight:700;color:' + col + '">' + (x.ret > 0 ? '+' : '') + x.ret + '%</td></tr>'; }});
     rh += '</table></div>';
-    h += rh;
+    h += '<div style="font-size:10px;color:#6b7280;margin:12px 0 2px">最近推薦</div>' + rh;
     h += '<div class="bt-note">※ 以推薦當日收盤價買進、持有至今計算，僅供參考，非投資建議。過去績效不代表未來表現。</div>';
     document.getElementById('btBody').innerHTML = h;
+    // 點分佈區間 → 展開該報酬區間的股票清單
+    var preds = {{ 'gt20': function(r){{ return r >= 20; }}, 'p10-20': function(r){{ return r >= 10 && r < 20; }}, 'p0-10': function(r){{ return r >= 0 && r < 10; }}, 'n10-0': function(r){{ return r >= -10 && r < 0; }}, 'lt-10': function(r){{ return r < -10; }} }};
+    var lbls = {{ 'gt20':'報酬 >20%', 'p10-20':'報酬 10~20%', 'p0-10':'報酬 0~10%', 'n10-0':'報酬 -10~0%', 'lt-10':'報酬 <-10%' }};
+    var curBk = null;
+    document.querySelectorAll('#btBody .bt-row[data-bk]').forEach(function(row){{
+      row.onclick = function(){{
+        var key = row.getAttribute('data-bk');
+        var box = document.getElementById('btBucketList');
+        if (curBk === key) {{ box.innerHTML = ''; curBk = null; return; }}
+        curBk = key;
+        var list = (d.all || []).filter(function(x){{ return preds[key](x.ret); }}).sort(function(a,b){{ return b.ret - a.ret; }});
+        if (!list.length) {{ box.innerHTML = ''; return; }}
+        var html = '<div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:9px 11px;margin:5px 0 2px">'
+          + '<div style="font-size:11px;color:#f0c040;font-weight:700;margin-bottom:7px">' + lbls[key] + '（' + list.length + ' 檔）</div>'
+          + '<div style="display:flex;flex-wrap:wrap;gap:5px 10px">';
+        list.forEach(function(x){{ var col = x.ret > 0 ? '#f85149' : '#3fb950'; html += '<span style="font-size:11px;color:#c9d1d9">' + x.date.slice(5) + ' ' + x.name + ' <b style="color:' + col + '">' + (x.ret > 0 ? '+' : '') + x.ret + '%</b></span>'; }});
+        html += '</div></div>';
+        box.innerHTML = html;
+      }};
+    }});
   }}).catch(function(){{ document.getElementById('btSub').textContent = '暫時無法載入'; }});
   </script>
 

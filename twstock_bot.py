@@ -759,6 +759,35 @@ def generate_html(data):
 </div>
 
 <div class="container">
+  <!-- 看多/看空投票 -->
+  <div class="vote-box">
+    <style>
+      .vote-box {{ background:#161b22; border:1px solid #21262d; border-radius:14px; padding:16px; margin:14px 0; text-align:center; }}
+      .vote-box .vq {{ font-size:14px; color:#c9d1d9; margin-bottom:12px; font-weight:600; }}
+      .vote-box .vbtns {{ display:flex; gap:12px; justify-content:center; }}
+      .vote-box button {{ flex:1; max-width:150px; padding:12px; border-radius:10px; border:1px solid #30363d; background:#21262d; color:#e6edf3; font-size:15px; font-weight:700; cursor:pointer; transition:.15s; }}
+      .vote-box button:hover {{ border-color:#58a6ff; }}
+      .vote-box .vmsg {{ margin-top:10px; font-size:13px; color:#3fb950; min-height:18px; }}
+    </style>
+    <div class="vq">📊 你看好今天這 5 檔嗎？</div>
+    <div class="vbtns">
+      <button onclick="castVote('bull')">🐂 看多</button>
+      <button onclick="castVote('bear')">🐻 看空</button>
+    </div>
+    <div class="vmsg" id="voteMsg"></div>
+  </div>
+  <script>
+  function castVote(v) {{
+    var today = '{d_str}'.replace(/\\//g, '-');
+    var k = 'vote_' + today;
+    var m = document.getElementById('voteMsg');
+    if (localStorage.getItem(k)) {{ m.textContent = '今天投過了 ' + (localStorage.getItem(k) === 'bull' ? '🐂' : '🐻'); return; }}
+    localStorage.setItem(k, v);
+    fetch('https://xingkong-linebot.onrender.com/api/vote?vote=' + v + '&date=' + today, {{ method: 'POST' }}).catch(function() {{}});
+    m.textContent = '✓ 已投 ' + (v === 'bull' ? '🐂 看多' : '🐻 看空');
+  }}
+  </script>
+
   <!-- 大盤 K 線圖 -->
   <div class="tv-market-hero">
     <div class="lbl">📈 台股加權指數（TAIEX）· 大盤即時走勢</div>

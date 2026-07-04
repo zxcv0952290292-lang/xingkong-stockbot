@@ -992,7 +992,7 @@ async function analyzeStock() {{
   const el = document.getElementById('searchResult');
   el.innerHTML = '<div class="loading">分析中，請稍候...</div>';
   try {{
-    const r = await fetch('/api/analyze?code=' + code);
+    const r = await fetch('https://xingkong-linebot.onrender.com/api/analyze?code=' + code);
     const d = await r.json();
     if (d.error) {{ el.innerHTML = '<div class="risk-note">' + d.error + '</div>'; return; }}
     const chg = d.change_pct;

@@ -1068,7 +1068,7 @@ async function analyzeStock() {{
   const code = document.getElementById('searchCode').value.trim();
   if (!code) return;
   const el = document.getElementById('searchResult');
-  el.innerHTML = '<div class="loading">分析中，請稍候...</div>';
+  el.innerHTML = '<div class="loading">🤖 AI 深度分析中…<br><span style="font-size:12px;color:#8b949e">即時股價 · K線技術 · 三大法人籌碼 · 基本面，約 10~20 秒（首次喚醒較久）請稍候</span></div>';
   try {{
     const r = await fetch('https://xingkong-linebot.onrender.com/api/analyze?code=' + code);
     const d = await r.json();

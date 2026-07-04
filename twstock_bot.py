@@ -1078,7 +1078,7 @@ async function analyzeStock() {{
     const chgColor = chg > 0 ? 'up' : (chg < 0 ? 'down' : '');
     const kl = d.kline;
     el.innerHTML = `
-      <div class="card" style="margin-top:12px">
+      <div class="card open" style="margin-top:12px">
         <div class="card-header">
           <div>
             <div class="rank-name">

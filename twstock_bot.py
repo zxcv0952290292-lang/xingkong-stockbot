@@ -499,6 +499,55 @@ def _mini_indicator_svg(chg_pct, entry, close, tp, sl):
     except Exception:
         return ""
 
+def _yahoo_series(symbol, rng="3mo"):
+    """抓 Yahoo 日線收盤序列（全球可存取），失敗回空 list。"""
+    import requests as req
+    try:
+        r = req.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+                    params={"interval": "1d", "range": rng},
+                    headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        res = ((r.json().get("chart") or {}).get("result") or [None])[0]
+        return [c for c in (res["indicators"]["quote"][0]["close"] or []) if c]
+    except Exception:
+        return []
+
+def _spark_svg(closes, w=340, h=90):
+    """把收盤序列畫成漸層面積走勢圖（自繪 SVG，取代脆弱的外部 widget）。"""
+    if len(closes) < 2:
+        return ""
+    mn, mx = min(closes), max(closes)
+    rng = max(mx - mn, 1e-9)
+    color = "#f85149" if closes[-1] >= closes[0] else "#3fb950"
+    n = len(closes)
+    pts = [((i / (n - 1)) * w, h - 5 - (c - mn) / rng * (h - 12)) for i, c in enumerate(closes)]
+    line = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+    area = f"M0,{h} L" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts) + f" L{w},{h} Z"
+    return (f'<svg viewBox="0 0 {w} {h}" width="100%" height="{h}" preserveAspectRatio="none" style="display:block">'
+            f'<defs><linearGradient id="txg" x1="0" y1="0" x2="0" y2="1">'
+            f'<stop offset="0" stop-color="{color}" stop-opacity="0.28"/>'
+            f'<stop offset="1" stop-color="{color}" stop-opacity="0"/></linearGradient></defs>'
+            f'<path d="{area}" fill="url(#txg)"/>'
+            f'<polyline points="{line}" fill="none" stroke="{color}" stroke-width="2" '
+            f'stroke-linejoin="round" stroke-linecap="round"/></svg>')
+
+def _taiex_block():
+    """台股加權指數 TAIEX 走勢圖（自 Yahoo ^TWII 抓資料自繪）。"""
+    closes = _yahoo_series("%5ETWII", "3mo")
+    if len(closes) < 2:
+        return ('<div class="tv-market-hero"><div class="lbl">📈 台股加權指數（TAIEX）</div>'
+                '<div style="padding:14px;color:#8b949e;font-size:12px">指數資料暫時無法取得</div></div>')
+    cur, prev, first = closes[-1], closes[-2], closes[0]
+    day = (cur - prev) / prev * 100
+    per = (cur - first) / first * 100
+    col = "#f85149" if day >= 0 else "#3fb950"
+    return (f'<div class="tv-market-hero">'
+            f'<div class="lbl">📈 台股加權指數（TAIEX）· 近 3 個月走勢</div>'
+            f'<div style="display:flex;align-items:baseline;gap:10px;padding:2px 10px 8px;flex-wrap:wrap">'
+            f'<span style="font-size:23px;font-weight:800;color:#e6edf3">{cur:,.0f}</span>'
+            f'<span style="font-size:13px;font-weight:700;color:{col}">{day:+.2f}%（當日）</span>'
+            f'<span style="font-size:12px;color:#8b949e">近3月 {per:+.1f}%</span></div>'
+            f'{_spark_svg(closes)}</div>')
+
 def generate_html(data):
     picks = data["picks"]
     d_str = data["date"]
@@ -506,6 +555,14 @@ def generate_html(data):
     stats = _load_perf_stats()
     total_recs = stats["picks"] or (len(picks) * 20)
     total_days = stats["days"] or 20
+
+    # 補算每檔真實漲跌（原始資料 change_pct 常為 0 → 卡片/熱力圖顯示異常）
+    for p in picks:
+        if not p.get("change_pct"):
+            cl = _yahoo_series(f"{p['code']}.TW", "5d") or _yahoo_series(f"{p['code']}.TWO", "5d")
+            if len(cl) >= 2 and cl[-2]:
+                p["change_pct"] = round((cl[-1] - cl[-2]) / cl[-2] * 100, 2)
+    taiex_block = _taiex_block()
 
     avg_chg = sum(p.get("change_pct", 0) or 0 for p in picks) / max(len(picks), 1)
     if avg_chg > 1.5:
@@ -839,29 +896,7 @@ def generate_html(data):
   </script>
 
   <!-- 大盤 K 線圖 -->
-  <div class="tv-market-hero">
-    <div class="lbl">📈 台股加權指數（TAIEX）· 大盤即時走勢</div>
-    <div class="tradingview-widget-container" style="height:220px">
-      <div id="tv_taiex"></div>
-      <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-mini-symbol-overview.js" async>
-      {{
-        "symbol": "TVC:TAIEX",
-        "width": "100%",
-        "height": 220,
-        "locale": "zh_TW",
-        "dateRange": "3M",
-        "colorTheme": "dark",
-        "trendLineColor": "rgba(240, 192, 64, 1)",
-        "underLineColor": "rgba(240, 192, 64, 0.15)",
-        "underLineBottomColor": "rgba(240, 192, 64, 0)",
-        "isTransparent": true,
-        "autosize": false,
-        "chartOnly": false,
-        "noTimeScale": false
-      }}
-      </script>
-    </div>
-  </div>
+  {taiex_block}
 
   <!-- 5 檔選股熱力圖 -->
   <div class="heatmap-section">

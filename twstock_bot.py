@@ -1084,6 +1084,11 @@ def deploy_to_netlify():
     zip_path = "/tmp/stock_app_deploy.zip"
     print("[Netlify] 打包部署中...")
 
+    # 寫 _redirects：根目錄 / 改寫成 /index.html（200 rewrite）
+    # 修正 bare-zip 部署時 Netlify 把根目錄用 text/plain 送出、瀏覽器顯示亂碼的問題
+    with open(os.path.join(app_dir, "_redirects"), "w", encoding="utf-8") as f:
+        f.write("/    /index.html    200\n")
+
     # 打包 stock_app 資料夾
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for root, dirs, files in os.walk(app_dir):

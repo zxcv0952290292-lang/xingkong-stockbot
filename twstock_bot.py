@@ -443,6 +443,33 @@ entry 絕對不能等於或高於收盤價，必須是「值得等待的買進�
     with open(LAST_PUSH_FILE, "w", encoding="utf-8") as f:
         json.dump({"date": d_str, "content": json.dumps(picks_data, ensure_ascii=False)}, f, ensure_ascii=False, indent=2)
 
+    # ── 同步到 Supabase（durable，取代 GitHub Actions 每次 checkout 就流失的 JSON）──
+    try:
+        import supa
+        if supa.enabled():
+            d_iso = d_str.replace("/", "-")
+            sp_rows = [{
+                "push_date": d_iso, "rank": p["rank"], "code": str(p["code"]),
+                "name": p["name"], "potential": p.get("potential"), "risk": p.get("risk"),
+                "close": p.get("close"), "change_pct": p.get("change_pct"),
+                "volume": p.get("volume"), "story": p.get("story"),
+                "technical": p.get("technical"), "chip": p.get("chip"),
+                "fundamental": p.get("fundamental"), "entry": p.get("entry"),
+                "take_profit": p.get("take_profit"), "stop_loss": p.get("stop_loss"),
+                "weeks": p.get("weeks"), "risk_note": p.get("risk_note"),
+                "reason": p.get("reason"), "raw": p,
+            } for p in picks_data]
+            supa.upsert("stock_picks", sp_rows, "push_date,rank")
+            ph_rows = [{
+                "push_date": d_iso, "code": str(p["code"]), "name": p["name"],
+                "entry_price": p.get("entry"),
+                "price_at_push": p.get("close", p.get("entry")),
+            } for p in picks_data]
+            supa.insert("push_history", ph_rows)
+            print(f"✅ Supabase 已同步 {len(sp_rows)} 檔（stock_picks + push_history）")
+    except Exception as e:
+        print(f"⚠️ Supabase 同步略過: {e}")
+
     # 自動生成靜態網頁並部署到 Netlify
     generate_html(web_data)
     deploy_to_netlify()

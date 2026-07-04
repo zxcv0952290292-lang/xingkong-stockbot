@@ -548,6 +548,22 @@ def _taiex_block():
             f'<span style="font-size:12px;color:#8b949e">近3月 {per:+.1f}%</span></div>'
             f'{_spark_svg(closes)}</div>')
 
+def _stock_chart(closes, name):
+    """個股近 3 個月走勢圖（自繪 SVG，取代失效的 TradingView 空白框）。"""
+    if len(closes) < 2:
+        return ('<div style="padding:48px 12px;text-align:center;color:#8b949e;font-size:12px">'
+                '走勢資料暫時無法取得</div>')
+    cur, first = closes[-1], closes[0]
+    per = (cur - first) / first * 100
+    lo, hi = min(closes), max(closes)
+    col = "#f85149" if cur >= first else "#3fb950"
+    return (f'<div style="display:flex;justify-content:space-between;align-items:baseline;padding:2px 4px 8px">'
+            f'<span style="font-size:12px;color:#8b949e">📈 {name} · 近 3 個月走勢</span>'
+            f'<span style="font-size:13px;font-weight:700;color:{col}">{per:+.1f}%</span></div>'
+            f'{_spark_svg(closes, 340, 150)}'
+            f'<div style="display:flex;justify-content:space-between;padding:6px 4px 0;font-size:10px;color:#6b7280">'
+            f'<span>近3月低 {lo:g}</span><span>現 {cur:g}</span><span>近3月高 {hi:g}</span></div>')
+
 def generate_html(data):
     picks = data["picks"]
     d_str = data["date"]
@@ -556,12 +572,12 @@ def generate_html(data):
     total_recs = stats["picks"] or (len(picks) * 20)
     total_days = stats["days"] or 20
 
-    # 補算每檔真實漲跌（原始資料 change_pct 常為 0 → 卡片/熱力圖顯示異常）
+    # 每檔抓 3 個月走勢：補算真實漲跌 + 自繪個股走勢圖（取代失效的 TradingView）
     for p in picks:
-        if not p.get("change_pct"):
-            cl = _yahoo_series(f"{p['code']}.TW", "5d") or _yahoo_series(f"{p['code']}.TWO", "5d")
-            if len(cl) >= 2 and cl[-2]:
-                p["change_pct"] = round((cl[-1] - cl[-2]) / cl[-2] * 100, 2)
+        series = _yahoo_series(f"{p['code']}.TW", "3mo") or _yahoo_series(f"{p['code']}.TWO", "3mo")
+        if len(series) >= 2 and series[-2] and not p.get("change_pct"):
+            p["change_pct"] = round((series[-1] - series[-2]) / series[-2] * 100, 2)
+        p["_chart"] = _stock_chart(series, p.get("name") or p["code"])
     taiex_block = _taiex_block()
 
     avg_chg = sum(p.get("change_pct", 0) or 0 for p in picks) / max(len(picks), 1)
@@ -614,7 +630,7 @@ def generate_html(data):
   </div>
   <div class="card-body">
     <div class="story-box"><div class="story-label">發生什麼事？</div>{p.get('story','')}</div>
-    <div class="tv-chart-slot" data-symbol="TWSE:{p['code']}"></div>
+    <div class="tv-chart-slot">{p['_chart']}</div>
     <div class="info-grid">
       <div class="info-item"><div class="label">技術面</div><div class="value">{p.get('technical','-')}</div></div>
       <div class="info-item"><div class="label">籌碼面</div><div class="value">{p.get('chip','-')}</div></div>
@@ -983,19 +999,9 @@ def generate_html(data):
 
 <div id="toast" class="toast"></div>
 <script>
-// 收合/展開卡片（開時 lazy-load TradingView widget）
+// 收合/展開卡片（走勢圖已於產生時內嵌，不需再載入）
 function toggleCard(id) {{
-  var card = document.getElementById(id);
-  card.classList.toggle('open');
-  if (card.classList.contains('open')) {{
-    var slot = card.querySelector('.tv-chart-slot');
-    if (slot && !slot.dataset.loaded) {{
-      var sym = slot.dataset.symbol;
-      var uid = 'tv_' + Math.random().toString(36).slice(2, 8);
-      slot.innerHTML = '<div class="tradingview-widget-container" style="height:200px"><div id="'+uid+'"></div><script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-mini-symbol-overview.js" async>{{"symbol":"'+sym+'","width":"100%","height":200,"locale":"zh_TW","dateRange":"1M","colorTheme":"dark","trendLineColor":"rgba(88,166,255,1)","underLineColor":"rgba(88,166,255,0.15)","underLineBottomColor":"rgba(88,166,255,0)","isTransparent":true}}<\\/script></div>';
-      slot.dataset.loaded = '1';
-    }}
-  }}
+  document.getElementById(id).classList.toggle('open');
 }}
 
 // 三大法人柱狀圖：從 chip 文字解析 → 渲染 SVG bar

@@ -500,39 +500,60 @@ def _mini_indicator_svg(chg_pct, entry, close, tp, sl):
         return ""
 
 def _yahoo_series(symbol, rng="3mo"):
-    """抓 Yahoo 日線收盤序列（全球可存取），失敗回空 list。"""
+    """抓 Yahoo 日線收盤序列 + 日期（全球可存取）。回 (closes, dates)。"""
     import requests as req
+    import datetime as _dt
     try:
         r = req.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
                     params={"interval": "1d", "range": rng},
                     headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         res = ((r.json().get("chart") or {}).get("result") or [None])[0]
-        return [c for c in (res["indicators"]["quote"][0]["close"] or []) if c]
+        ts = res.get("timestamp") or []
+        cl = res["indicators"]["quote"][0]["close"] or []
+        closes, dates = [], []
+        for i in range(min(len(ts), len(cl))):
+            if cl[i] is not None:
+                closes.append(cl[i])
+                dates.append(_dt.datetime.utcfromtimestamp(ts[i]).strftime("%Y-%m-%d"))
+        return closes, dates
     except Exception:
-        return []
+        return [], []
 
-def _spark_svg(closes, w=340, h=90):
-    """把收盤序列畫成漸層面積走勢圖（自繪 SVG，取代脆弱的外部 widget）。"""
+_SPARK_ID = [0]
+
+def _spark_svg(closes, dates=None, w=340, h=90):
+    """互動式漸層面積走勢圖：觸控/滑鼠移動顯示該日日期+價格（自繪 SVG）。"""
+    import json as _json
     if len(closes) < 2:
         return ""
+    _SPARK_ID[0] += 1
+    gid = f"sg{_SPARK_ID[0]}"
     mn, mx = min(closes), max(closes)
     rng = max(mx - mn, 1e-9)
     color = "#f85149" if closes[-1] >= closes[0] else "#3fb950"
     n = len(closes)
-    pts = [((i / (n - 1)) * w, h - 5 - (c - mn) / rng * (h - 12)) for i, c in enumerate(closes)]
-    line = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
-    area = f"M0,{h} L" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts) + f" L{w},{h} Z"
-    return (f'<svg viewBox="0 0 {w} {h}" width="100%" height="{h}" preserveAspectRatio="none" style="display:block">'
-            f'<defs><linearGradient id="txg" x1="0" y1="0" x2="0" y2="1">'
+    dates = dates or [""] * n
+    xy = [((i / (n - 1)) * w, h - 5 - (c - mn) / rng * (h - 12)) for i, c in enumerate(closes)]
+    line = " ".join(f"{x:.1f},{y:.1f}" for x, y in xy)
+    area = f"M0,{h} L" + " L".join(f"{x:.1f},{y:.1f}" for x, y in xy) + f" L{w},{h} Z"
+    pts = _json.dumps([[round(x, 1), round(y, 1), (dates[i] or "")[5:], round(closes[i], 2)]
+                       for i, (x, y) in enumerate(xy)], ensure_ascii=False)
+    return (f'<div class="spark" data-pts=\'{pts}\' data-w="{w}" data-h="{h}" style="position:relative">'
+            f'<svg viewBox="0 0 {w} {h}" width="100%" height="{h}" preserveAspectRatio="none" style="display:block;touch-action:none">'
+            f'<defs><linearGradient id="{gid}" x1="0" y1="0" x2="0" y2="1">'
             f'<stop offset="0" stop-color="{color}" stop-opacity="0.28"/>'
             f'<stop offset="1" stop-color="{color}" stop-opacity="0"/></linearGradient></defs>'
-            f'<path d="{area}" fill="url(#txg)"/>'
+            f'<path d="{area}" fill="url(#{gid})"/>'
             f'<polyline points="{line}" fill="none" stroke="{color}" stroke-width="2" '
-            f'stroke-linejoin="round" stroke-linecap="round"/></svg>')
+            f'stroke-linejoin="round" stroke-linecap="round"/>'
+            f'<line class="crx" x1="0" y1="0" x2="0" y2="{h}" stroke="#8b949e" stroke-width="1" '
+            f'stroke-dasharray="3 3" vector-effect="non-scaling-stroke" style="display:none"/>'
+            f'<circle class="crd" r="3.5" fill="{color}" stroke="#0d1117" stroke-width="1.5" style="display:none"/>'
+            f'</svg><div class="sparktip" style="display:none"></div></div>')
 
 def _taiex_block():
     """台股加權指數 TAIEX 走勢圖（自 Yahoo ^TWII 抓資料自繪）。"""
-    closes = _yahoo_series("%5ETWII", "3mo")
+    closes, dates = _yahoo_series("%5ETWII", "3mo")
     if len(closes) < 2:
         return ('<div class="tv-market-hero"><div class="lbl">📈 台股加權指數（TAIEX）</div>'
                 '<div style="padding:14px;color:#8b949e;font-size:12px">指數資料暫時無法取得</div></div>')
@@ -546,10 +567,10 @@ def _taiex_block():
             f'<span style="font-size:23px;font-weight:800;color:#e6edf3">{cur:,.0f}</span>'
             f'<span style="font-size:13px;font-weight:700;color:{col}">{day:+.2f}%（當日）</span>'
             f'<span style="font-size:12px;color:#8b949e">近3月 {per:+.1f}%</span></div>'
-            f'{_spark_svg(closes)}</div>')
+            f'{_spark_svg(closes, dates)}</div>')
 
-def _stock_chart(closes, name):
-    """個股近 3 個月走勢圖（自繪 SVG，取代失效的 TradingView 空白框）。"""
+def _stock_chart(closes, dates, name):
+    """個股近 3 個月互動走勢圖（自繪 SVG，取代失效的 TradingView 空白框）。"""
     if len(closes) < 2:
         return ('<div style="padding:48px 12px;text-align:center;color:#8b949e;font-size:12px">'
                 '走勢資料暫時無法取得</div>')
@@ -558,9 +579,9 @@ def _stock_chart(closes, name):
     lo, hi = min(closes), max(closes)
     col = "#f85149" if cur >= first else "#3fb950"
     return (f'<div style="display:flex;justify-content:space-between;align-items:baseline;padding:2px 4px 8px">'
-            f'<span style="font-size:12px;color:#8b949e">📈 {name} · 近 3 個月走勢</span>'
+            f'<span style="font-size:12px;color:#8b949e">📈 {name} · 近 3 個月走勢（點圖看日期價格）</span>'
             f'<span style="font-size:13px;font-weight:700;color:{col}">{per:+.1f}%</span></div>'
-            f'{_spark_svg(closes, 340, 150)}'
+            f'{_spark_svg(closes, dates, 340, 150)}'
             f'<div style="display:flex;justify-content:space-between;padding:6px 4px 0;font-size:10px;color:#6b7280">'
             f'<span>近3月低 {lo:g}</span><span>現 {cur:g}</span><span>近3月高 {hi:g}</span></div>')
 
@@ -574,10 +595,12 @@ def generate_html(data):
 
     # 每檔抓 3 個月走勢：補算真實漲跌 + 自繪個股走勢圖（取代失效的 TradingView）
     for p in picks:
-        series = _yahoo_series(f"{p['code']}.TW", "3mo") or _yahoo_series(f"{p['code']}.TWO", "3mo")
+        series, sdates = _yahoo_series(f"{p['code']}.TW", "3mo")
+        if not series:
+            series, sdates = _yahoo_series(f"{p['code']}.TWO", "3mo")
         if len(series) >= 2 and series[-2] and not p.get("change_pct"):
             p["change_pct"] = round((series[-1] - series[-2]) / series[-2] * 100, 2)
-        p["_chart"] = _stock_chart(series, p.get("name") or p["code"])
+        p["_chart"] = _stock_chart(series, sdates, p.get("name") or p["code"])
     taiex_block = _taiex_block()
 
     avg_chg = sum(p.get("change_pct", 0) or 0 for p in picks) / max(len(picks), 1)
@@ -767,7 +790,9 @@ def generate_html(data):
   .loading {{ text-align: center; padding: 20px; color: #8b949e; font-size: 14px; }}
 
   /* TradingView chart slot */
-  .tv-chart-slot {{ background: #0d1120; border: 1px solid #21262d; border-radius: 10px; padding: 8px; min-height: 200px; }}
+  .tv-chart-slot {{ background: #0d1120; border: 1px solid #21262d; border-radius: 10px; padding: 8px; min-height: 180px; }}
+  .spark {{ cursor: crosshair; }}
+  .sparktip {{ position: absolute; top: 2px; transform: translateX(-50%); background: rgba(13,17,23,.96); border: 1px solid #30363d; border-radius: 6px; padding: 3px 8px; font-size: 11px; color: #e6edf3; white-space: nowrap; pointer-events: none; z-index: 6; }}
   .tv-chart-slot iframe {{ border-radius: 6px; }}
   .tv-market-hero {{ background: #161b22; border: 1px solid #21262d; border-radius: 12px; padding: 8px; margin-bottom: 14px; }}
   .tv-market-hero .lbl {{ padding: 6px 10px 8px; font-size: 12px; color: #f0c040; font-weight: 700; letter-spacing: .5px; }}
@@ -1076,9 +1101,38 @@ function renderHeatmap() {{
   }}).join('');
 }}
 
+// 走勢圖互動：觸控/滑鼠移動顯示該日日期+價格
+function initSparkCharts() {{
+  document.querySelectorAll('.spark').forEach(function(sp) {{
+    if (sp.dataset.init) return; sp.dataset.init = '1';
+    var pts; try {{ pts = JSON.parse(sp.getAttribute('data-pts')); }} catch(e) {{ return; }}
+    if (!pts || !pts.length) return;
+    var W = +sp.dataset.w;
+    var crx = sp.querySelector('.crx'), crd = sp.querySelector('.crd'), tip = sp.querySelector('.sparktip');
+    function show(clientX) {{
+      var rect = sp.getBoundingClientRect();
+      if (!rect.width) return;
+      var idx = Math.round((clientX - rect.left) / rect.width * (pts.length - 1));
+      if (idx < 0) idx = 0; if (idx > pts.length - 1) idx = pts.length - 1;
+      var pt = pts[idx];
+      crx.setAttribute('x1', pt[0]); crx.setAttribute('x2', pt[0]); crx.style.display = '';
+      crd.setAttribute('cx', pt[0]); crd.setAttribute('cy', pt[1]); crd.style.display = '';
+      tip.style.left = (pt[0] / W * rect.width) + 'px'; tip.style.display = '';
+      tip.innerHTML = pt[2] + '　<b>' + pt[3] + '</b>';
+    }}
+    function hide() {{ crx.style.display = 'none'; crd.style.display = 'none'; tip.style.display = 'none'; }}
+    sp.addEventListener('mousemove', function(e) {{ show(e.clientX); }});
+    sp.addEventListener('mouseleave', hide);
+    sp.addEventListener('touchstart', function(e) {{ show(e.touches[0].clientX); }}, {{passive: true}});
+    sp.addEventListener('touchmove', function(e) {{ show(e.touches[0].clientX); }}, {{passive: true}});
+    sp.addEventListener('touchend', hide);
+  }});
+}}
+
 document.addEventListener('DOMContentLoaded', function() {{
   renderChipBars();
   renderHeatmap();
+  initSparkCharts();
 }});
 
 // 篩選卡片

@@ -1,10 +1,8 @@
 name: Daily Stock Push
 
 on:
-  schedule:
-    # UTC 00:30 = 台北 08:30，週一到週五（台股交易日）
-    - cron: '30 0 * * 1-5'
-  workflow_dispatch:  # 支援手動觸發測試
+  # 排程改由 Cloudflare 定時 Worker（08:40 台灣）用 workflow_dispatch 觸發，準時不延遲
+  workflow_dispatch:
 
 jobs:
   push:

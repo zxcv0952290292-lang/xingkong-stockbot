@@ -1,0 +1,40 @@
+
+<div class="search-section chain-section">
+  <h2>🔗 AI 供應鏈題材地圖</h2>
+  <p class="chain-sub">用「卡脖子節點 → 台股受惠股」的邏輯導航（對標美股 Serenity 的供應鏈拆解法）。點任一檔，直接跑上方的 AI 個股分析。</p>
+  <div id="chainMap"></div>
+</div>
+<style>
+.chain-section .chain-sub{color:#8b949e;font-size:13px;line-height:1.6;margin:2px 0 14px}
+.chain-theme{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.chain-name{font-size:15px;font-weight:700;color:#58a6ff}
+.chain-desc{font-size:12px;color:#8b949e;margin:3px 0 10px}
+.chain-chips{display:flex;flex-wrap:wrap;gap:7px}
+.chain-chip{display:inline-flex;align-items:center;gap:6px;background:#0d1117;border:1px solid #30363d;border-radius:8px;color:#c9d1d9;font-size:13px;padding:7px 11px;cursor:pointer;font-family:inherit;transition:all .15s;-webkit-tap-highlight-color:transparent}
+.chain-chip:hover,.chain-chip:active{border-color:#58a6ff;background:#161f2e}
+.chain-chip .cc-code{font-size:11px;color:#6e7681;font-variant-numeric:tabular-nums}
+</style>
+<script>
+var CHAIN_THEMES=[
+ {name:"CoWoS／先進封裝",desc:"AI 晶片產能瓶頸，台積電獨大",stocks:[["2330","台積電"],["3711","日月光"],["3413","京鼎"],["3583","辛耘"],["3131","弘塑"],["3680","家登"],["6196","帆宣"]]},
+ {name:"矽光子／CPO",desc:"Serenity 主打的光子學卡脖子（InP）",stocks:[["3081","聯亞"],["6442","光聖"],["3363","上詮"],["3163","波若威"],["4977","眾達-KY"],["4979","華星光"],["5455","英特磊"]]},
+ {name:"ASIC 客製晶片",desc:"雲端自研晶片浪潮",stocks:[["3661","世芯-KY"],["3443","創意"],["3035","智原"],["6643","M31"]]},
+ {name:"HBM／記憶體",desc:"AI 運算的記憶體瓶頸",stocks:[["8299","群聯"],["2344","華邦電"],["2408","南亞科"]]},
+ {name:"散熱／液冷",desc:"高功耗 AI 伺服器剛需",stocks:[["3017","奇鋐"],["3324","雙鴻"],["2421","建準"],["2308","台達電"]]},
+ {name:"ABF 載板",desc:"高階封裝關鍵材料",stocks:[["3037","欣興"],["8046","南電"],["3189","景碩"]]},
+ {name:"探針卡／測試",desc:"先進製程良率把關",stocks:[["6223","旺矽"],["6510","精測"],["6515","穎崴"]]}
+];
+function renderChain(){
+ var box=document.getElementById('chainMap');if(!box)return;
+ box.innerHTML=CHAIN_THEMES.map(function(t){
+  var chips=t.stocks.map(function(s){return '<button class="chain-chip" onclick="analyzeCode(\''+s[0]+'\')">'+s[1]+'<span class="cc-code">'+s[0]+'</span></button>';}).join('');
+  return '<div class="chain-theme"><div class="chain-name">'+t.name+'</div><div class="chain-desc">'+t.desc+'</div><div class="chain-chips">'+chips+'</div></div>';
+ }).join('');
+}
+function analyzeCode(code){
+ var i=document.getElementById('searchCode');if(i)i.value=code;
+ if(typeof analyzeStock==='function')analyzeStock();
+ var r=document.getElementById('searchResult');if(r)r.scrollIntoView({behavior:'smooth',block:'center'});
+}
+renderChain();
+</script>

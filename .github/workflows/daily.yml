@@ -34,3 +34,16 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           TZ: 'Asia/Taipei'
         run: python -u twstock_bot.py
+
+      # 鏡像到 Cloudflare + 補供應鏈區塊。
+      # 以前只能在 Stanley 的 Mac 上跑（wrangler 走本機 OAuth），Mac 蓋著就整天不部署。
+      # 2026-07-12 拿到 CLOUDFLARE_API_TOKEN 後搬上雲，不再靠他開機。
+      - name: Mirror to Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TZ: 'Asia/Taipei'
+        run: |
+          python -u deploy_stock_cf.py
+          npx -y wrangler@latest pages deploy cf_stock_site \
+            --project-name ferryman-stock --branch main --commit-dirty=true

@@ -51,12 +51,46 @@ def get_date():
     elif today.weekday() == 6: delta = 2
     return (today - timedelta(days=delta)).strftime("%Y%m%d")
 
-def fetch_twse(url, timeout=40):
-    try:
-        r = requests.get(url, timeout=timeout)
-        j = r.json()
-        return j if j.get("stat") == "OK" else None
-    except: return None
+MI_INDEX = "https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&date={}&type=ALLBUT0999"
+
+def resolve_trading_date(max_back=12):
+    """往回找最近一個 TWSE「真的有資料」的交易日。
+
+    不能用日曆推算：颱風假／國定假日 TWSE 一樣沒資料，光跳過週末不夠。
+    2026-07-10（五）就是這樣——get_date() 算出那天，TWSE 回「沒有符合條件的資料!」，
+    整支 bot 靜靜結束、GitHub Actions 還是綠燈，股票網因此卡在 07/09。
+    """
+    d = datetime.today()
+    for _ in range(max_back):
+        d -= timedelta(days=1)
+        if d.weekday() >= 5:          # 六日不開市，省一次請求
+            continue
+        ds = d.strftime("%Y%m%d")
+        if fetch_twse(MI_INDEX.format(ds), timeout=30):
+            print(f"[交易日] 採用 {ds}")
+            return ds
+        print(f"  [跳過] {ds} 非交易日")
+        time.sleep(1)
+    return None
+
+def fetch_twse(url, timeout=40, retries=3):
+    """失敗會重試並印出原因。原本是 `except: return None` 全部吞掉，
+    導致連線錯誤和「非交易日」長得一模一樣，沒人知道發生什麼事。"""
+    for i in range(retries):
+        try:
+            r = requests.get(url, timeout=timeout)
+            j = r.json()
+            stat = j.get("stat", "")
+            if stat == "OK":
+                return j
+            if "沒有符合條件" in str(stat):   # 非交易日，重試也沒用
+                return None
+            print(f"  [TWSE] stat={stat!r}（{i+1}/{retries}）")
+        except Exception as e:
+            print(f"  [TWSE] {type(e).__name__}: {e}（{i+1}/{retries}）")
+        if i < retries - 1:
+            time.sleep(3 * (i + 1))
+    return None
 
 def get_kline(stock_no):
     monthly = []
@@ -165,12 +199,14 @@ def run_scrapers():
 
 def verify_twice(date):
     print(f"[驗證1] 抓取 {date}...")
-    url = f"https://www.twse.com.tw/exchangeReport/MI_INDEX?response=json&date={date}&type=ALLBUT0999"
+    url = MI_INDEX.format(date)
     j1 = fetch_twse(url)
     time.sleep(3)
     print(f"[驗證2] 二次確認...")
     j2 = fetch_twse(url)
-    if not j1 or not j2: return None
+    if not j1 or not j2:
+        print(f"[驗證失敗] {date} 兩次抓取沒有都成功（j1={bool(j1)} j2={bool(j2)}）")
+        return None
     t1 = max(j1.get("tables",[]), key=lambda t: len(t.get("data",[])))
     t2 = max(j2.get("tables",[]), key=lambda t: len(t.get("data",[])))
     if len(t1["data"]) != len(t2["data"]):
@@ -207,9 +243,25 @@ def run():
         return
 
     run_scrapers()
-    date = get_date()
+
+    # 問 TWSE 要交易日，不要用日曆猜（颱風假/國定假日會猜錯）
+    date = resolve_trading_date()
+    if not date:
+        msg = "找不到最近的交易日：TWSE 連續 12 天都沒資料或連不上"
+        print(f"[失敗] {msg}")
+        _write_status("stock", f"❌ {msg}")
+        try: push(f"⚠️ 小星空股票推播失敗\n{msg}")
+        except Exception: pass
+        sys.exit(1)          # 讓 GitHub Actions 變紅燈，不要無聲綠燈
+
     df_raw = verify_twice(date)
-    if df_raw is None: return
+    if df_raw is None:
+        msg = f"{date} 行情驗證失敗，今日不推播"
+        print(f"[失敗] {msg}")
+        _write_status("stock", f"❌ {msg}")
+        try: push(f"⚠️ 小星空股票推播失敗\n{msg}")
+        except Exception: pass
+        sys.exit(1)
 
     # 整理今日行情
     col_map = {}

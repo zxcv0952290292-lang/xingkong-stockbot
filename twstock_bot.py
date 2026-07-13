@@ -551,6 +551,14 @@ entry 絕對不能等於或高於收盤價，必須是「值得等待的買進�
     except Exception as e:
         print(f"⚠️ Supabase 同步略過: {e}")
 
+    # 重算歷史推薦的報酬 —— 一定要在生成網頁「之前」，網頁上的戰績面板才會是今天的數字。
+    # 失敗不擋主流程（推播已經完成了），但要大聲叫。
+    try:
+        refresh_returns()
+    except Exception as e:
+        print(f"[回填] ❌ 失敗：{e}")
+        _write_status("backtest", f"❌ {e}")
+
     # 自動生成靜態網頁並部署到 Netlify
     generate_html(web_data)
     deploy_to_netlify()
@@ -579,6 +587,71 @@ def _mini_indicator_svg(chg_pct, entry, close, tp, sl):
         return f'<svg viewBox="0 0 60 28" width="60" height="28" style="opacity:.85"><polyline points="{pts}" fill="none" stroke="{color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="40" cy="{28 - int((vals[2]-mn)/rng*24)}" r="2" fill="{color}"/></svg>'
     except Exception:
         return ""
+
+def refresh_returns():
+    """每天重算所有未平倉推薦的報酬，回填 push_history.return_pct / current_price。
+
+    為什麼要有這支：return_pct 當初是「一次性」回填的（2026-07-04），之後每天新推薦的
+    股票沒人去算它們後來漲跌多少。到 2026-07-13 為止，220 筆推薦裡有 95 筆（43%）
+    return_pct 是 NULL —— 而股票網公開掛著「歷史推薦戰績 勝率 45.6%」，那個數字
+    只涵蓋前 125 筆，等於對外顯示一個過期又不完整的績效。
+
+    Stanley 是登錄業務員，公開網站上的績效數字必須是真的。
+    （他自己訂的規則：AI 生成的數字一律不准出現在成品。過期的數字同理。）
+
+    基準跟既有資料一致：return_pct = (現價 - price_at_push) / price_at_push * 100
+    """
+    try:
+        import supa
+        if not supa.enabled():
+            print("[回填] Supabase 未設定，略過")
+            return
+    except Exception as e:
+        print(f"[回填] 載入 supa 失敗：{e}")
+        return
+
+    rows = supa.select("push_history",
+        "select=id,code,price_at_push,return_pct,closed_at&closed_at=is.null&limit=3000")
+    if not rows:
+        print("[回填] 沒有未平倉的推薦")
+        return
+
+    # 同一檔可能被推薦過很多次，價格只抓一次
+    codes = sorted({str(r["code"]).strip() for r in rows if r.get("code")})
+    print(f"[回填] {len(rows)} 筆未平倉、{len(codes)} 檔不重複，開始抓現價…")
+
+    price = {}
+    for c in codes:
+        closes, _ = _yahoo_series(f"{c}.TW", "5d")
+        if not closes:
+            closes, _ = _yahoo_series(f"{c}.TWO", "5d")     # 上櫃
+        if closes:
+            price[c] = closes[-1]
+        time.sleep(0.25)                                     # 別把 Yahoo 打爆
+
+    print(f"[回填] 抓到 {len(price)}/{len(codes)} 檔的現價")
+
+    # ⚠️ 一定要用 PATCH（supa.update），不能用 upsert。
+    # upsert 走 POST，沒帶到的欄位會被寫成 NULL → 撞 push_date 的 NOT NULL，整批失敗（錯誤 23502）。
+    ok = fail = skipped = 0
+    for r in rows:
+        c = str(r.get("code") or "").strip()
+        base = r.get("price_at_push")
+        cur = price.get(c)
+        if not c or not base or not cur:
+            skipped += 1
+            continue
+        done = supa.update("push_history", f"id=eq.{r['id']}", {
+            "current_price": round(cur, 2),
+            "return_pct": round((cur - base) / base * 100, 2),
+        })
+        ok += 1 if done else 0
+        fail += 0 if done else 1
+
+    msg = f"更新 {ok} 筆・失敗 {fail}・略過 {skipped}（抓不到價）"
+    print(f"[回填] {'✅' if fail == 0 else '⚠️'} {msg}")
+    _write_status("backtest", f"{'✅' if fail == 0 else '⚠️'} {msg}")
+
 
 def _yahoo_series(symbol, rng="3mo"):
     """抓 Yahoo 日線收盤序列 + 日期（全球可存取）。回 (closes, dates)。"""
@@ -965,7 +1038,9 @@ def generate_html(data):
   }}
   </script>
 
-  <!-- 歷史推薦戰績回測 -->
+  <!-- AI 選股觀察紀錄（原本叫「歷史推薦戰績」，掛著勝率與平均報酬）
+       2026-07-13 改：登錄業務員不得「引用績效暗示確可獲利」，勝率/平均報酬字面上就是引用績效。
+       改成只揭露紀錄、不做任何宣稱——攤開每一筆，漲跌都在，讓人自己看。 -->
   <div class="backtest">
     <style>
       .backtest {{ background:#161b22; border:1px solid #21262d; border-radius:14px; padding:18px; margin:14px 0; }}
@@ -986,23 +1061,24 @@ def generate_html(data):
       .bt-recent td {{ padding:5px 6px; border-bottom:1px solid #1a1f2c; }}
       .bt-note {{ font-size:11px; color:#484f58; margin-top:10px; text-align:center; line-height:1.6; }}
     </style>
-    <div class="bt-head"><h2>📊 歷史推薦戰績</h2><div class="sub" id="btSub">載入中…</div></div>
+    <div class="bt-head"><h2>📋 AI 選股觀察紀錄</h2><div class="sub" id="btSub">載入中…</div></div>
     <div id="btBody"></div>
   </div>
   <script>
   fetch('https://xingkong-linebot.onrender.com/api/backtest').then(function(r){{ return r.json(); }}).then(function(d){{
     if (!d || !d.samples) {{ document.getElementById('btSub').textContent = '資料整理中'; return; }}
     document.getElementById('btSub').textContent = d.date_from + ' ~ ' + d.date_to + ' · 共 ' + d.samples + ' 檔推薦';
-    var ar = d.avg_return, arCls = ar > 0 ? 'pos' : (ar < 0 ? 'neg' : 'neu');
+    // 不放勝率、不放平均報酬 —— 那是「引用績效」，登錄業務員的紅線。
+    // 只放「我做了多久、挑了幾檔」這種不含判斷的事實。
     var h = '<div class="bt-tiles">'
-      + '<div class="bt-tile"><div class="v neu">' + d.win_rate + '%</div><div class="l">勝率（收正報酬）</div></div>'
-      + '<div class="bt-tile"><div class="v ' + arCls + '">' + (ar > 0 ? '+' : '') + ar + '%</div><div class="l">平均報酬</div></div>'
-      + '<div class="bt-tile"><div class="v neu">' + d.samples + '</div><div class="l">推薦樣本</div></div></div>';
-    h += '<div class="bt-bw"><div>🏆 最佳　' + d.best.name + ' <b style="color:#f85149">+' + d.best.ret + '%</b></div>'
-      + '<div>💧 最差　' + d.worst.name + ' <b style="color:#3fb950">' + d.worst.ret + '%</b></div></div>';
+      + '<div class="bt-tile"><div class="v neu">' + d.days + '</div><div class="l">觀察天數</div></div>'
+      + '<div class="bt-tile"><div class="v neu">' + d.samples + '</div><div class="l">累積挑過</div></div>'
+      + '<div class="bt-tile"><div class="v neu">5</div><div class="l">每天挑幾檔</div></div></div>';
+    h += '<div class="bt-bw"><div>📈 漲最多　' + d.best.name + ' <b style="color:#f85149">+' + d.best.ret + '%</b></div>'
+      + '<div>📉 跌最多　' + d.worst.name + ' <b style="color:#3fb950">' + d.worst.ret + '%</b></div></div>';
     var bk = d.buckets, tot = d.samples;
     var order = [['gt20','>20%','#f85149'],['p10-20','10~20%','#f0883e'],['p0-10','0~10%','#d29922'],['n10-0','-10~0%','#3fb950'],['lt-10','<-10%','#238636']];
-    var dh = '<div style="font-size:10px;color:#6b7280;margin:2px 0 5px">📊 報酬分佈（點區間看是哪些股票 ▾）</div>';
+    var dh = '<div style="font-size:10px;color:#6b7280;margin:2px 0 5px">📊 挑過的股票後來怎麼了（點區間看清單 ▾）</div>';
     order.forEach(function(o){{ var c = bk[o[0]] || 0; var w = tot ? Math.round(c / tot * 100) : 0; dh += '<div class="bt-row" data-bk="' + o[0] + '" style="cursor:pointer"><span class="lbl">' + o[1] + '</span><span class="bar" style="width:' + Math.max(w * 1.6, 2) + 'px;background:' + o[2] + '"></span><span>' + c + ' 檔 ›</span></div>'; }});
     dh += '<div id="btBucketList"></div>';
     h += dh;
@@ -1010,7 +1086,13 @@ def generate_html(data):
     d.recent.forEach(function(x){{ var col = x.ret > 0 ? '#f85149' : '#3fb950'; rh += '<tr><td style="color:#8b949e">' + x.date.slice(5) + '</td><td>' + x.name + '</td><td style="text-align:right;font-weight:700;color:' + col + '">' + (x.ret > 0 ? '+' : '') + x.ret + '%</td></tr>'; }});
     rh += '</table></div>';
     h += '<div style="font-size:10px;color:#6b7280;margin:12px 0 2px">最近推薦</div>' + rh;
-    h += '<div class="bt-note">※ 以推薦當日收盤價買進、持有至今計算，僅供參考，非投資建議。過去績效不代表未來表現。</div>';
+    h += '<div class="bt-note">'
+      + '這是<b>紀錄</b>，不是績效。<br>'
+      + '每一檔都是 AI 依當日量價、籌碼、技術面挑的，我沒有背書，也不建議你照著買。<br>'
+      + '報酬以推薦當日收盤價計、持有至今，會隨行情每天變動。<br>'
+      + '漲的跌的都攤在這裡 —— 想看跌最多的，點下面的分佈。<br>'
+      + '<b>僅供參考，非投資建議。</b>'
+      + '</div>';
     document.getElementById('btBody').innerHTML = h;
     // 點分佈區間 → 展開該報酬區間的股票清單
     var preds = {{ 'gt20': function(r){{ return r >= 20; }}, 'p10-20': function(r){{ return r >= 10 && r < 20; }}, 'p0-10': function(r){{ return r >= 0 && r < 10; }}, 'n10-0': function(r){{ return r >= -10 && r < 0; }}, 'lt-10': function(r){{ return r < -10; }} }};

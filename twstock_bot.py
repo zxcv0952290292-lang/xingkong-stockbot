@@ -895,11 +895,7 @@ def generate_html(data):
 
 <div class="hero">
   <h1>⭐ 小星空 <span class="glow">台股精選</span></h1>
-  <div class="tagline">每天 08:30 AI 從 <b>1300+ 檔</b> 台股中<br>挑出 <b>5 檔波段最強</b>，直接送到你的 LINE</div>
-  <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:10px">
-    <img src="https://qr-official.line.me/gs/M_616ybzzl_GW.png?oat_content=qr" alt="加入 LINE 官方帳號" width="168" height="168" style="border-radius:12px;background:#fff;padding:8px;box-shadow:0 4px 16px rgba(6,199,85,.35)">
-    <span style="color:#06c755;font-weight:700;font-size:14px">📱 掃 QR 加入 LINE，每天早盤前收到 5 檔</span>
-  </div>
+  <div class="tagline">每天 08:30 AI 從 <b>1300+ 檔</b> 台股中<br>挑出 <b>5 檔波段最強</b></div>
   <span class="cta-note">📅 觀察 {total_days} 天 · 累積 {total_recs} 檔推薦 · 100% 免費</span>
 </div>
 
@@ -1071,9 +1067,7 @@ def generate_html(data):
 
 <div class="footer">
   ⚠️ 本頁資訊僅供參考，非投資建議<br>
-  📈 波段建議 · AI 多維度分析 · 擺渡人出品<br>
-  <img src="https://qr-official.line.me/gs/M_616ybzzl_GW.png?oat_content=qr" alt="加入小星空 LINE" width="120" height="120" style="border-radius:10px;background:#fff;padding:6px;margin:8px auto;display:block">
-  <div style="color:#06c755;font-weight:700;font-size:12px">📱 掃 QR 加入小星空 LINE ⭐</div>
+  📈 波段建議 · AI 多維度分析 · 擺渡人出品
 </div>
 
 <div id="toast" class="toast"></div>

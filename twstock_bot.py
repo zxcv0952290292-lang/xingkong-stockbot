@@ -633,22 +633,35 @@ def refresh_returns():
 
     # ⚠️ 一定要用 PATCH（supa.update），不能用 upsert。
     # upsert 走 POST，沒帶到的欄位會被寫成 NULL → 撞 push_date 的 NOT NULL，整批失敗（錯誤 23502）。
-    ok = fail = skipped = 0
+    #
+    # 逐筆 PATCH 太慢（225 筆，把 Actions 拖到超時）。報酬只跟 (代號, 進場價) 有關，
+    # 同一組的所有列答案都一樣 → 用 filter 一次改掉，呼叫次數少一個量級。
+    groups = {}
+    skipped = 0
     for r in rows:
         c = str(r.get("code") or "").strip()
         base = r.get("price_at_push")
-        cur = price.get(c)
-        if not c or not base or not cur:
+        if not c or not base or c not in price:
             skipped += 1
             continue
-        done = supa.update("push_history", f"id=eq.{r['id']}", {
+        groups.setdefault((c, base), 0)
+        groups[(c, base)] += 1
+
+    ok = fail = rowsn = 0
+    for (c, base), n in groups.items():
+        cur = price[c]
+        done = supa.update("push_history",
+                           f"code=eq.{c}&price_at_push=eq.{base}&closed_at=is.null", {
             "current_price": round(cur, 2),
             "return_pct": round((cur - base) / base * 100, 2),
         })
-        ok += 1 if done else 0
-        fail += 0 if done else 1
+        if done:
+            ok += 1
+            rowsn += n
+        else:
+            fail += 1
 
-    msg = f"更新 {ok} 筆・失敗 {fail}・略過 {skipped}（抓不到價）"
+    msg = f"更新 {rowsn} 筆（{ok} 組）・失敗 {fail} 組・略過 {skipped} 筆（抓不到價）"
     print(f"[回填] {'✅' if fail == 0 else '⚠️'} {msg}")
     _write_status("backtest", f"{'✅' if fail == 0 else '⚠️'} {msg}")
 

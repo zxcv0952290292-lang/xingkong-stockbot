@@ -476,7 +476,36 @@ entry 絕對不能等於或高於收盤價，必須是「值得等待的買進�
             f"⚠️ {p['risk_note']}"
         )
     lines.append("\n━━━━━━━━━━━━━━━━━━━\n⚠️ 僅供參考，非投資建議")
-    push("\n".join(lines))
+
+    # 一天只推一次 LINE。雲端的檔案系統是 ephemeral，last_stock_push.json 每次都是新的，
+    # 所以本機那套 stamp 在 Actions 上完全無效——同一天重跑（補跑、手動觸發、我在測試）
+    # 就會把同樣的 5 檔再推一次給 Stanley。改用 Supabase 上鎖（module_status 免 DDL）。
+    #
+    # 只鎖「推 LINE」這件事：網頁還是照更新，重跑不會讓網站卡住。
+    lock = f"stock_pushed:{datetime.now().strftime('%Y-%m-%d')}"
+    already = False
+    try:
+        import supa
+        if supa.enabled():
+            already = bool(supa.select("module_status", f"module_name=eq.{lock}&select=module_name"))
+    except Exception as e:
+        print(f"[推播鎖] 讀不到 Supabase，照推：{e}")
+
+    if already:
+        print(f"[推播鎖] 今天已經推過 LINE 了（{lock}），這次只更新網頁，不重複推播")
+    else:
+        push("\n".join(lines))
+        try:
+            import supa
+            if supa.enabled():
+                supa.upsert("module_status", [{
+                    "module_name": lock,
+                    "last_run": datetime.now().strftime("%Y-%m-%dT%H:%M:%S") + "+08:00",
+                    "status": "pushed",
+                    "detail": {"date": d_str, "count": len(picks_data)},
+                }], "module_name")
+        except Exception as e:
+            print(f"[推播鎖] 寫不進 Supabase：{e}")
 
     # 存追蹤檔
     track_file = os.path.join(BASE, "track_picks.json")

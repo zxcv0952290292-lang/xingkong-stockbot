@@ -541,12 +541,18 @@ entry 絕對不能等於或高於收盤價，必須是「值得等待的買進�
                 "reason": p.get("reason"), "raw": p,
             } for p in picks_data]
             supa.upsert("stock_picks", sp_rows, "push_date,rank")
-            ph_rows = [{
-                "push_date": d_iso, "code": str(p["code"]), "name": p["name"],
-                "entry_price": p.get("entry"),
-                "price_at_push": p.get("close", p.get("entry")),
-            } for p in picks_data]
-            supa.insert("push_history", ph_rows)
+            # push_history 是純 insert（表上沒有唯一鍵可 upsert）——同一天重跑（補跑、
+            # 手動觸發、測試）會重複寫入。2026-07-13 被寫了 4 次＝20 筆重複，
+            # 面板「最近推薦」同一檔出現三次。先查今天寫過沒，寫過就跳過。
+            if supa.select("push_history", f"push_date=eq.{d_iso}&select=id&limit=1"):
+                print(f"⏭ push_history {d_iso} 已寫過，跳過（避免同日重跑重複寫入）")
+            else:
+                ph_rows = [{
+                    "push_date": d_iso, "code": str(p["code"]), "name": p["name"],
+                    "entry_price": p.get("entry"),
+                    "price_at_push": p.get("close", p.get("entry")),
+                } for p in picks_data]
+                supa.insert("push_history", ph_rows)
             print(f"✅ Supabase 已同步 {len(sp_rows)} 檔（stock_picks + push_history）")
     except Exception as e:
         print(f"⚠️ Supabase 同步略過: {e}")

@@ -40,8 +40,20 @@ try:
 except Exception:
     prev = None
 
+# 同一個 workflow 裡，bot 剛把 HTML 生成在本地（/tmp/stockbot/stock_app/index.html）——
+# 直接讀它，零時間差、零 CDN 快取問題。
+# （之前抓 Netlify CDN：bot 部署完 1 秒就去抓，拿到舊快取還照樣鏡像上去，
+#   CF 站因此掛著舊面板。hash 檢查防得了「完全相同」，防不了「不同但還是舊的」。）
 html = None
-for i in range(1, 13):                      # 最多等 ~3 分鐘
+local = "/tmp/stockbot/stock_app/index.html"
+if os.path.exists(local):
+    h = open(local, encoding="utf-8").read()
+    if "自選股即時分析" in h and today in h:
+        html = h
+        print(f"[deploy_stock_cf] ✅ 用本地剛生成的 HTML（{len(h)} bytes），不抓 CDN")
+
+for i in range(1, 13):                      # 退路：本地沒有才去抓 Netlify，最多等 ~3 分鐘
+    if html: break
     try:
         r = requests.get(SRC, timeout=30, headers={"Cache-Control": "no-cache"})
         h = r.text

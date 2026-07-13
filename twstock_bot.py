@@ -1051,9 +1051,7 @@ def generate_html(data):
   }}
   </script>
 
-  <!-- AI 選股觀察紀錄（原本叫「歷史推薦戰績」，掛著勝率與平均報酬）
-       2026-07-13 改：登錄業務員不得「引用績效暗示確可獲利」，勝率/平均報酬字面上就是引用績效。
-       改成只揭露紀錄、不做任何宣稱——攤開每一筆，漲跌都在，讓人自己看。 -->
+  <!-- AI 選股觀察紀錄：只揭露紀錄，不做任何宣稱 -->
   <div class="backtest">
     <style>
       .backtest {{ background:#161b22; border:1px solid #21262d; border-radius:14px; padding:18px; margin:14px 0; }}
@@ -1081,8 +1079,6 @@ def generate_html(data):
   fetch('https://xingkong-linebot.onrender.com/api/backtest').then(function(r){{ return r.json(); }}).then(function(d){{
     if (!d || !d.samples) {{ document.getElementById('btSub').textContent = '資料整理中'; return; }}
     document.getElementById('btSub').textContent = d.date_from + ' ~ ' + d.date_to + ' · 共 ' + d.samples + ' 檔推薦';
-    // 不放勝率、不放平均報酬 —— 那是「引用績效」，登錄業務員的紅線。
-    // 只放「我做了多久、挑了幾檔」這種不含判斷的事實。
     var h = '<div class="bt-tiles">'
       + '<div class="bt-tile"><div class="v neu">' + d.days + '</div><div class="l">觀察天數</div></div>'
       + '<div class="bt-tile"><div class="v neu">' + d.samples + '</div><div class="l">累積挑過</div></div>'

@@ -27,7 +27,10 @@ def _write_status(key, status_text, extras=None):
 TOKEN         = os.environ["LINE_CHANNEL_TOKEN"]
 UID           = os.environ["OWNER_UID"]
 ANTHROPIC_KEY = os.environ["ANTHROPIC_API_KEY"]
-NETLIFY_TOKEN = os.environ["NETLIFY_AUTH_TOKEN"]
+# 2026-08-23：改成選填。原本是 os.environ["..."]，secret 一旦拿掉整支在 import 就 KeyError，
+# 而 Netlify 這條早就不是主路徑了（deploy_site 直接推 Cloudflare）。
+# 沒有 token 就跳過 Netlify 鏡像，不要讓一個備援管道把主流程弄死。
+NETLIFY_TOKEN = os.environ.get("NETLIFY_AUTH_TOKEN", "")
 NETLIFY_SITE_ID = os.environ.get("NETLIFY_SITE_ID", "fbdebe6c-9476-4e4b-8ad2-40c48ed389d3")
 
 CODE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1334,7 +1337,7 @@ function showToast(msg) {{
 
 // 複製選股卡到 LINE
 function copyStockToLine(rank, code, name, entry, tp, sl) {{
-  const text = `📊 小星空 #${{rank}} ${{code}} ${{name}}\\n💰 進場:${{entry}} 🎯 停利:${{tp}} 🛑 停損:${{sl}}\\n👉 https://iridescent-fox-2b8e7e.netlify.app`;
+  const text = `📊 小星空 #${{rank}} ${{code}} ${{name}}\\n💰 進場:${{entry}} 🎯 停利:${{tp}} 🛑 停損:${{sl}}\\n👉 https://ferryman-stock.pages.dev`;
   if (navigator.clipboard) {{
     navigator.clipboard.writeText(text).then(() => showToast('已複製，貼到 LINE 分享 ✅'));
   }} else {{
@@ -1438,6 +1441,46 @@ function calculate() {{
 </body>
 </html>"""
 
+    # tide 借鏡：AI 引擎顯示燈（Render 免費機會睡）＋長輩模式（放大字級）。
+    # 用字串替換注入，避開 f-string 的 {{ }} 跳脫地雷。
+    _toolbar = """
+<div class="toolbar">
+  <style>
+    .toolbar{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin:2px 20px 8px;}
+    .eng-light{font-size:12px;background:#161b22;border:1px solid #21262d;border-radius:20px;padding:5px 12px;color:#8b949e;}
+    .tool-btn{font-size:12px;color:#c9d1d9;background:#161b22;border:1px solid #21262d;border-radius:20px;padding:5px 12px;cursor:pointer;font-weight:600;}
+    .tool-btn.on{background:linear-gradient(135deg,#f0c040,#b8860b);border-color:#f0c040;color:#0d1120;}
+    html.bigfont body{zoom:1.18;}
+  </style>
+  <span class="eng-light" id="engLight">🟡 AI 引擎：檢查中…</span>
+  <button class="tool-btn" id="bigFontBtn" onclick="toggleBigFont()">👴 長輩模式</button>
+</div>
+<script>
+  function pingEngine(tries){
+    tries=tries||0;
+    var el=document.getElementById('engLight');
+    var ctrl=new AbortController();
+    var to=setTimeout(function(){ctrl.abort();},6000);
+    fetch('https://xingkong-linebot.onrender.com/',{mode:'no-cors',signal:ctrl.signal})
+      .then(function(){clearTimeout(to);el.textContent='🟢 AI 引擎：線上';el.style.color='#3fb950';})
+      .catch(function(){clearTimeout(to);
+        if(tries<5){el.textContent='🟡 AI 引擎：喚醒中…';el.style.color='#f0c040';setTimeout(function(){pingEngine(tries+1);},7000);}
+        else{el.textContent='🔴 AI 引擎：離線（點自選股搜尋會自動喚醒）';el.style.color='#f85149';}
+      });
+  }
+  function toggleBigFont(){
+    var on=document.documentElement.classList.toggle('bigfont');
+    var b=document.getElementById('bigFontBtn');if(b)b.classList.toggle('on',on);
+    try{localStorage.setItem('stock_bigfont',on?'1':'0');}catch(e){}
+  }
+  (function(){
+    try{if(localStorage.getItem('stock_bigfont')==='1'){document.documentElement.classList.add('bigfont');var b=document.getElementById('bigFontBtn');if(b)b.classList.add('on');}}catch(e){}
+    pingEngine(0);
+  })();
+</script>
+"""
+    html = html.replace('<div class="container">', _toolbar + '<div class="container">', 1)
+
     out_path = os.path.join(BASE, "stock_app", "index.html")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html)
@@ -1445,6 +1488,9 @@ function calculate() {{
 
 
 def deploy_to_netlify():
+    if not NETLIFY_TOKEN:
+        print("  ⏭ 沒有 NETLIFY_AUTH_TOKEN，跳過 Netlify 鏡像（主站走 Cloudflare）")
+        return None
     import zipfile
     import requests as req
     # 從模組層讀環境變數
@@ -1481,7 +1527,7 @@ def deploy_to_netlify():
         )
 
     if resp.status_code in (200, 201):
-        deploy_url = resp.json().get("ssl_url", "https://iridescent-fox-2b8e7e.netlify.app")
+        deploy_url = resp.json().get("ssl_url", "https://ferryman-stock.pages.dev")
         print(f"✅ Netlify 部署完成 → {deploy_url}")
     else:
         print(f"⚠️ Netlify 部署失敗：{resp.status_code} {resp.text[:200]}")

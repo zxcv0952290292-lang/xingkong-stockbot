@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""把股票網鏡像到 Cloudflare(ferryman-stock)，並補上 AI 供應鏈題材地圖。
+"""把股票網鏡像到 Cloudflare(ferryman-stock)，（已移除靜態供應鏈區塊）。
 
 在 GitHub Actions 裡接在 twstock_bot.py 之後跑。bot 剛把新頁面部署到 Netlify，
 但 Netlify 的 CDN 要幾十秒才吐得出新版——所以這裡要等，等不到就不鏡像，
@@ -21,7 +21,8 @@ from datetime import datetime
 import requests
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-SRC = "https://iridescent-fox-2b8e7e.netlify.app/"
+SRC = "https://iridescent-fox-2b8e7e.netlify.app/"   # ⚠️ 2026-08-23：這站只剩 50 bytes，形同關閉。
+# 這支只在「本地沒生成 HTML」時才會用到它當備援，正常路徑不會走到這裡。
 LIVE = "https://ferryman-stock.pages.dev/"
 OUT = os.path.join(BASE, "cf_stock_site")
 
@@ -75,10 +76,9 @@ if html is None:
     print(f"[deploy_stock_cf] ⏭ Netlify 沒有比線上更新的內容，不鏡像")
     sys.exit(0)
 
-snippet = open(os.path.join(BASE, "_chain_snippet.html"), encoding="utf-8").read()
-if "AI 供應鏈題材地圖" not in html:
-    html = html.replace('<div id="searchResult"></div>',
-                        '<div id="searchResult"></div>' + snippet, 1)
+# 2026-08-22 移除：_chain_snippet.html 是 2026-07-05 的靜態檔，零變數、零日期，
+# 每次部署貼同一份，從建立那天起就沒變過。一張永遠不會更新的「題材地圖」
+# 比沒有更糟——它讓人以為那是今天的資訊。改用 ferryman-tide 的即時資金流。
 
 os.makedirs(OUT, exist_ok=True)
 open(os.path.join(OUT, "index.html"), "w", encoding="utf-8").write(html)
